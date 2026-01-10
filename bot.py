@@ -1,10 +1,5 @@
 """
-MAX Bot Moderator
-Автоматически удаляет сообщения от пользователей, которые не являются администраторами чата
-"""
-"""
-MAX Bot Moderator - ИСПРАВЛЕННАЯ ВЕРСИЯ
-Автоматически удаляет сообщения от пользователей, которые не являются администраторами чата
+MAX Bot Moderator - ФИНАЛЬНАЯ ВЕРСИЯ
 """
 
 import os
@@ -13,46 +8,72 @@ import logging
 from maxapi import Bot, Dispatcher
 from maxapi.types import MessageCreated, BotStarted, Command
 
-# Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Получаем токен из переменной окружения
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-
 if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не найден! Добавьте его в переменные окружения")
+    raise ValueError("❌ BOT_TOKEN не найден!")
 
-# Инициализация
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
-# Кэш администраторов
-CACHE_DURATION = 300  # 5 минут
+CACHE_DURATION = 300
 admin_cache = {}
 
 # ============================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ============================================
 
-def get_chat_id_from_message(message):
-    """Получает chat_id из объекта message"""
-    # Пробуем разные варианты структуры
-    if hasattr(message, 'recipient') and hasattr(message.recipient, 'chat_id'):
-        return message.recipient.chat_id
-    elif hasattr(message, 'chat') and hasattr(message.chat, 'chat_id'):
-        return message.chat.chat_id
-    elif hasattr(message, 'chat_id'):
-        return message.chat_id
-    else:
-        logger.error(f"Не удалось получить chat_id из message: {dir(message)}")
+def get_message_info(event):
+    """Извлекает всю нужную информацию из события"""
+    try:
+        message = event.message
+        
+        # Получаем ID сообщения
+        msg_id = None
+        if hasattr(message, 'id'):
+            msg_id = message.id
+        elif hasattr(message, 'message_id'):
+            msg_id = message.message_id
+        elif hasattr(event, 'message_id'):
+            msg_id = event.message_id
+        
+        # Получаем chat_id
+        chat_id = None
+        if hasattr(event, 'chat_id'):
+            chat_id = event.chat_id
+        elif hasattr(message, 'recipient') and hasattr(message.recipient, 'chat_id'):
+            chat_id = message.recipient.chat_id
+        elif hasattr(message, 'chat') and hasattr(message.chat, 'chat_id'):
+            chat_id = message.chat.chat_id
+        
+        # Получаем user_id
+        user_id = None
+        if hasattr(message, 'sender') and hasattr(message.sender, 'user_id'):
+            user_id = message.sender.user_id
+        elif hasattr(event, 'user_id'):
+            user_id = event.user_id
+        
+        # Получаем текст
+        text = message.text if hasattr(message, 'text') else ''
+        
+        return {
+            'message_id': msg_id,
+            'chat_id': chat_id,
+            'user_id': user_id,
+            'text': text
+        }
+    except Exception as e:
+        logger.error(f"❌ Ошибка извлечения данных: {e}")
+        logger.error(f"Event attributes: {dir(event)}")
+        logger.error(f"Message attributes: {dir(event.message) if hasattr(event, 'message') else 'No message'}")
         return None
 
 def is_cache_valid(chat_id):
-    """Проверяет валидность кэша"""
     import time
     key = f"admins_{chat_id}"
     if key not in admin_cache:
@@ -61,14 +82,12 @@ def is_cache_valid(chat_id):
     return (time.time() - cache_time) < CACHE_DURATION
 
 def get_cached_admins(chat_id):
-    """Получает админов из кэша"""
     key = f"admins_{chat_id}"
     if is_cache_valid(chat_id):
         return admin_cache[key].get('admins', [])
     return None
 
 def set_cached_admins(chat_id, admin_ids):
-    """Сохраняет админов в кэш"""
     import time
     key = f"admins_{chat_id}"
     admin_cache[key] = {
@@ -77,7 +96,6 @@ def set_cached_admins(chat_id, admin_ids):
     }
 
 async def fetch_admins_from_api(chat_id):
-    """Запрашивает администраторов из API"""
     import aiohttp
     url = f"https://platform-api.max.ru/chats/{chat_id}/members/admins"
     headers = {"Authorization": BOT_TOKEN}
@@ -89,17 +107,16 @@ async def fetch_admins_from_api(chat_id):
                     data = await response.json()
                     admins = data.get('admins', [])
                     admin_ids = [admin.get('user_id') for admin in admins]
-                    logger.info(f"✅ Получено {len(admin_ids)} админов для chat={chat_id}")
+                    logger.info(f"✅ Админов: {len(admin_ids)} для chat={chat_id}")
                     return admin_ids
                 else:
-                    logger.warning(f"⚠️ Ошибка API {response.status} для chat={chat_id}")
+                    logger.warning(f"⚠️ API error {response.status}")
                     return []
     except Exception as e:
-        logger.error(f"❌ Ошибка запроса админов: {e}")
+        logger.error(f"❌ Ошибка API: {e}")
         return []
 
 async def get_admin_ids(chat_id):
-    """Получает список ID администраторов"""
     cached = get_cached_admins(chat_id)
     if cached is not None:
         return cached
@@ -109,7 +126,6 @@ async def get_admin_ids(chat_id):
     return admin_ids
 
 async def delete_message(message_id):
-    """Удаляет сообщение"""
     import aiohttp
     url = f"https://platform-api.max.ru/messages?message_id={message_id}"
     headers = {"Authorization": BOT_TOKEN}
@@ -131,65 +147,82 @@ async def delete_message(message_id):
 
 @dp.bot_started()
 async def bot_started(event: BotStarted):
-    """Старт бота"""
     logger.info(f"🤖 Бот запущен в chat={event.chat_id}")
-    await event.bot.send_message(
-        chat_id=event.chat_id,
-        text='🛡️ *Бот-менеджер активирован!*\n\n'
-             '✅ Только администраторы могут писать\n'
-             '✂️ Сообщения остальных удаляются автоматически\n\n'
-             'Команды: /help'
-    )
+    try:
+        await event.bot.send_message(
+            chat_id=event.chat_id,
+            text='🛡️ *Бот-менеджер активирован!*\n\n'
+                 '✅ Только администраторы могут писать\n'
+                 '✂️ Сообщения остальных удаляются\n\n'
+                 'Команды: /help'
+        )
+    except Exception as e:
+        logger.error(f"Ошибка отправки приветствия: {e}")
 
 @dp.message_created(Command('help'))
 async def help_command(event: MessageCreated):
-    """Справка"""
     await event.message.answer(
         '🛡️ *Бот-менеджер*\n\n'
-        'Удаляет сообщения от неадминов.\n\n'
         'Команды:\n'
         '/help - Справка\n'
         '/status - Статус\n'
-        '/myid - Ваш ID'
+        '/myid - Ваш ID\n'
+        '/debug - Отладка (для проверки)'
     )
 
 @dp.message_created(Command('status'))
 async def status_command(event: MessageCreated):
-    """Статус"""
-    chat_id = get_chat_id_from_message(event.message)
-    if not chat_id:
+    info = get_message_info(event)
+    if not info or not info['chat_id']:
         await event.message.answer("❌ Не удалось определить chat_id")
         return
     
-    admin_ids = await get_admin_ids(chat_id)
+    admin_ids = await get_admin_ids(info['chat_id'])
     await event.message.answer(
-        f'✅ Бот работает\n\n'
+        f'✅ Бот работает\n'
         f'Администраторов: {len(admin_ids)}'
     )
 
 @dp.message_created(Command('myid'))
 async def myid_command(event: MessageCreated):
-    """Показать ID"""
-    user_id = event.message.sender.user_id
-    await event.message.answer(f"🆔 Ваш ID: `{user_id}`")
+    info = get_message_info(event)
+    if info and info['user_id']:
+        await event.message.answer(f"🆔 Ваш ID: `{info['user_id']}`")
+
+@dp.message_created(Command('debug'))
+async def debug_command(event: MessageCreated):
+    """Отладочная информация"""
+    info = get_message_info(event)
+    debug_text = f"🔍 *Debug Info:*\n\n"
+    debug_text += f"message_id: {info['message_id']}\n"
+    debug_text += f"chat_id: {info['chat_id']}\n"
+    debug_text += f"user_id: {info['user_id']}\n"
+    debug_text += f"text: {info['text']}\n"
+    await event.message.answer(debug_text)
 
 @dp.message_created()
 async def check_message(event: MessageCreated):
     """Главная логика"""
     try:
-        message = event.message
-        user_id = message.sender.user_id
-        message_id = message.message_id
-        text = message.text or ''
+        # Получаем информацию о сообщении
+        info = get_message_info(event)
         
-        # Пропускаем команды
-        if text.startswith('/'):
+        if not info:
+            logger.error("⚠️ Не удалось получить информацию о сообщении")
             return
         
-        # Получаем chat_id
-        chat_id = get_chat_id_from_message(message)
-        if not chat_id:
-            logger.warning("⚠️ Не удалось получить chat_id")
+        message_id = info['message_id']
+        chat_id = info['chat_id']
+        user_id = info['user_id']
+        text = info['text']
+        
+        # Пропускаем команды
+        if text and text.startswith('/'):
+            return
+        
+        # Проверяем наличие всех данных
+        if not all([message_id, chat_id, user_id]):
+            logger.warning(f"⚠️ Неполные данные: msg_id={message_id}, chat={chat_id}, user={user_id}")
             return
         
         # Получаем админов
@@ -197,14 +230,15 @@ async def check_message(event: MessageCreated):
         
         # Проверяем права
         if user_id in admin_ids:
-            return  # Админ - пропускаем
+            logger.info(f"✅ Админ пишет: user={user_id}")
+            return
         
         # НЕ админ - удаляем
         success = await delete_message(message_id)
         if success:
-            logger.info(f"✂️ Удалено: user={user_id}, chat={chat_id}")
+            logger.info(f"✂️ УДАЛЕНО: user={user_id}, chat={chat_id}, msg_id={message_id}")
         else:
-            logger.warning(f"⚠️ Не удалось удалить: {message_id}")
+            logger.warning(f"⚠️ Не удалось удалить: msg_id={message_id}")
             
     except Exception as e:
         logger.error(f"❌ Ошибка: {e}", exc_info=True)
@@ -214,7 +248,8 @@ async def check_message(event: MessageCreated):
 # ============================================
 
 async def main():
-    logger.info("🚀 Запуск бота...")
+    logger.info("🚀 Запуск MAX бота-менеджера...")
+    logger.info(f"📝 Токен: {'✅ Найден' if BOT_TOKEN else '❌ Не найден'}")
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
