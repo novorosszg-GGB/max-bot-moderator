@@ -48,59 +48,19 @@ def set_cached_admins(chat_id: str, admin_ids: list):
     }
     logger.info(f"💾 Кэш обновлён для chat_id={chat_id}: {len(admin_ids)} админов")
 
-# ================== API ЗАПРОСЫ (ТЕСТОВАЯ ВЕРСИЯ) ==================
-
-async def fetch_admins_method_1(chat_id: str) -> list:
-    """Метод 1: GET /chats/{chatId}/members/admins"""
-    url = f"{API_URL}/chats/{chat_id}/members/admins"
-    headers = {"Authorization": BOT_TOKEN}
-    
-    logger.info(f"🧪 [МЕТОД 1] Пробуем /members/admins для chat_id={chat_id}")
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as response:
-                status = response.status
-                text = await response.text()
-                
-                logger.info(f"📡 [МЕТОД 1] Статус: {status}")
-                logger.info(f"📡 [МЕТОД 1] Ответ (первые 500 символов): {text[:500]}")
-                
-                if status == 200:
-                    data = await response.json()
-                    admins = data.get('admins', [])
-                    admin_ids = [admin['user_id'] for admin in admins]
-                    logger.info(f"✅ [МЕТОД 1] Получено {len(admin_ids)} админов: {admin_ids}")
-                    return admin_ids
-                else:
-                    logger.warning(f"⚠️ [МЕТОД 1] Ошибка {status}: {text[:200]}")
-                    return []
-    except Exception as e:
-        logger.error(f"❌ [МЕТОД 1] Исключение: {e}")
-        return []
-
-async def fetch_admins_method_2(chat_id: str) -> list:
-    """Метод 2: GET /chats/{chatId}/members (все участники) → фильтр is_admin"""
+# ================== API ЗАПРОСЫ ==================
+async def fetch_admins_from_api(chat_id: str) -> list:
+    """Получает список администраторов через /chats/{chatId}/members"""
     url = f"{API_URL}/chats/{chat_id}/members"
     headers = {"Authorization": BOT_TOKEN}
-    params = {"count": 100}  # Получаем до 100 участников
-    
-    logger.info(f"🧪 [МЕТОД 2] Пробуем /members (все участники) для chat_id={chat_id}")
+    params = {"count": 100}
     
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, params=params) as response:
-                status = response.status
-                text = await response.text()
-                
-                logger.info(f"📡 [МЕТОД 2] Статус: {status}")
-                logger.info(f"📡 [МЕТОД 2] Ответ (первые 500 символов): {text[:500]}")
-                
-                if status == 200:
+                if response.status == 200:
                     data = await response.json()
                     members = data.get('members', [])
-                    
-                    logger.info(f"📊 [МЕТОД 2] Всего участников: {len(members)}")
                     
                     # Фильтруем админов и владельцев
                     admin_ids = []
@@ -108,65 +68,19 @@ async def fetch_admins_method_2(chat_id: str) -> list:
                         user_id = member.get('user_id')
                         is_admin = member.get('is_admin', False)
                         is_owner = member.get('is_owner', False)
-                        first_name = member.get('first_name', 'Unknown')
-                        
-                        logger.info(
-                            f"👤 [МЕТОД 2] user_id={user_id}, "
-                            f"name={first_name}, "
-                            f"is_admin={is_admin}, "
-                            f"is_owner={is_owner}"
-                        )
                         
                         if is_admin or is_owner:
                             admin_ids.append(user_id)
                     
-                    logger.info(f"✅ [МЕТОД 2] Найдено {len(admin_ids)} админов: {admin_ids}")
+                    logger.info(f"✅ Получено {len(admin_ids)} админов для chat_id={chat_id}")
                     return admin_ids
                 else:
-                    logger.warning(f"⚠️ [МЕТОД 2] Ошибка {status}: {text[:200]}")
+                    error_text = await response.text()
+                    logger.error(f"❌ Ошибка получения админов: {response.status} - {error_text}")
                     return []
     except Exception as e:
-        logger.error(f"❌ [МЕТОД 2] Исключение: {e}")
+        logger.error(f"❌ Исключение при запросе админов: {e}")
         return []
-
-async def fetch_admins_from_api(chat_id: str) -> list:
-    """Основная функция: пробует оба метода и оба формата chat_id"""
-    
-    logger.info(f"\n{'='*60}")
-    logger.info(f"🔍 НАЧАЛО ПОЛУЧЕНИЯ АДМИНОВ ДЛЯ chat_id={chat_id}")
-    logger.info(f"{'='*60}\n")
-    
-    # Пробуем исходный chat_id
-    logger.info(f"🧪 Попытка 1: Исходный chat_id = {chat_id}")
-    
-    admins_1 = await fetch_admins_method_1(chat_id)
-    if admins_1:
-        logger.info(f"✅ УСПЕХ с методом 1 и исходным chat_id!")
-        return admins_1
-    
-    admins_2 = await fetch_admins_method_2(chat_id)
-    if admins_2:
-        logger.info(f"✅ УСПЕХ с методом 2 и исходным chat_id!")
-        return admins_2
-    
-    # Если chat_id отрицательный, пробуем положительный
-    if str(chat_id).startswith('-'):
-        positive_chat_id = str(chat_id)[1:]  # Убираем минус
-        logger.info(f"\n🧪 Попытка 2: Положительный chat_id = {positive_chat_id}")
-        
-        admins_1 = await fetch_admins_method_1(positive_chat_id)
-        if admins_1:
-            logger.info(f"✅ УСПЕХ с методом 1 и положительным chat_id!")
-            return admins_1
-        
-        admins_2 = await fetch_admins_method_2(positive_chat_id)
-        if admins_2:
-            logger.info(f"✅ УСПЕХ с методом 2 и положительным chat_id!")
-            return admins_2
-    
-    logger.error(f"❌ НЕ УДАЛОСЬ получить админов ни одним способом")
-    logger.info(f"\n{'='*60}\n")
-    return []
 
 async def get_admin_ids(chat_id: str) -> list:
     """Получает список ID админов (с кэшированием)"""
@@ -258,11 +172,6 @@ def get_message_info(event: MessageCreated):
         elif hasattr(message, 'text'):
             text = message.text
         
-        logger.info(
-            f"📨 Извлечено: msg_id={msg_id}, chat={chat_id}, "
-            f"user={user_id}, text={text[:30] if text else 'None'}..."
-        )
-        
         return msg_id, chat_id, user_id, text
         
     except Exception as e:
@@ -280,11 +189,14 @@ async def handle_bot_started(event: BotStarted):
     logger.info(f"🤖 Бот запущен в chat={chat_id}")
     await send_message(
         chat_id,
-        "👋 **Бот-модератор запущен! (ТЕСТОВАЯ ВЕРСИЯ)**\n\n"
-        "Могут писать только администраторы.\n"
-        "Сообщения остальных будут удалены автоматически.\n\n"
-        "📊 Эта версия показывает детальные логи проверки.\n\n"
-        "Команды: /help, /test"
+        "✅ **Бот-модератор активен!**\n\n"
+        "📋 Могут писать только администраторы.\n"
+        "🗑️ Сообщения остальных будут удалены (~1 сек).\n\n"
+        "Команды:\n"
+        "/help — справка\n"
+        "/status — статус бота\n"
+        "/refresh — обновить список админов\n"
+        "/myid — ваш ID"
     )
 
 @dp.message_created()
@@ -292,89 +204,24 @@ async def check_message(event: MessageCreated):
     """Проверяет и удаляет сообщения от не-админов"""
     msg_id, chat_id, user_id, text = get_message_info(event)
     
-    logger.info(f"\n{'='*60}")
-    logger.info(f"🔍 ПРОВЕРКА СООБЩЕНИЯ")
-    logger.info(f"{'='*60}")
-    logger.info(f"📨 Message ID: {msg_id}")
-    logger.info(f"💬 Chat ID: {chat_id}")
-    logger.info(f"👤 User ID: {user_id}")
-    logger.info(f"📝 Text: {text}")
-    logger.info(f"{'='*60}\n")
-    
     # Проверки
-    if not msg_id:
-        logger.warning("⚠️ Не удалось получить message_id, пропускаем")
-        return
-    
-    if not chat_id or not user_id:
-        logger.warning("⚠️ Нет chat_id или user_id, пропускаем")
+    if not msg_id or not chat_id or not user_id:
         return
     
     # Пропускаем команды
     if text and text.startswith('/'):
-        logger.info(f"⏭️ Пропускаем команду: {text}")
         return
     
     # Получаем список админов
-    logger.info(f"🔍 НАЧИНАЕМ ПОЛУЧЕНИЕ СПИСКА АДМИНОВ...")
     admin_ids = await get_admin_ids(str(chat_id))
     
-    logger.info(f"\n{'='*60}")
-    logger.info(f"📋 РЕЗУЛЬТАТ ПОЛУЧЕНИЯ АДМИНОВ:")
-    logger.info(f"{'='*60}")
-    logger.info(f"Найдено админов: {len(admin_ids)}")
-    logger.info(f"Список admin_ids: {admin_ids}")
-    logger.info(f"Тип admin_ids: {[type(aid).__name__ for aid in admin_ids]}")
-    logger.info(f"{'='*60}\n")
-    
-    logger.info(f"\n{'='*60}")
-    logger.info(f"🔍 ПРОВЕРКА ПРАВ ПОЛЬЗОВАТЕЛЯ")
-    logger.info(f"{'='*60}")
-    logger.info(f"User ID из сообщения: {user_id}")
-    logger.info(f"Тип user_id: {type(user_id).__name__}")
-    logger.info(f"{'='*60}\n")
-    
-    # Проверяем права (с учётом типов)
-    is_admin = False
-    
-    # Проверка 1: Прямое сравнение
+    # Проверяем права
     if user_id in admin_ids:
-        is_admin = True
-        logger.info(f"✅ [ПРОВЕРКА 1] user_id найден в admin_ids (прямое сравнение)")
-    else:
-        logger.info(f"❌ [ПРОВЕРКА 1] user_id НЕ найден (прямое сравнение)")
-    
-    # Проверка 2: Преобразование в строку
-    if str(user_id) in [str(aid) for aid in admin_ids]:
-        is_admin = True
-        logger.info(f"✅ [ПРОВЕРКА 2] user_id найден (сравнение строк)")
-    else:
-        logger.info(f"❌ [ПРОВЕРКА 2] user_id НЕ найден (сравнение строк)")
-    
-    # Проверка 3: Преобразование в int
-    try:
-        if int(user_id) in [int(aid) for aid in admin_ids]:
-            is_admin = True
-            logger.info(f"✅ [ПРОВЕРКА 3] user_id найден (сравнение int)")
-        else:
-            logger.info(f"❌ [ПРОВЕРКА 3] user_id НЕ найден (сравнение int)")
-    except:
-        logger.info(f"⚠️ [ПРОВЕРКА 3] Не удалось преобразовать в int")
-    
-    logger.info(f"\n{'='*60}")
-    logger.info(f"📊 ИТОГОВОЕ РЕШЕНИЕ:")
-    logger.info(f"{'='*60}")
-    
-    if is_admin:
-        logger.info(f"✅ User {user_id} — АДМИНИСТРАТОР, сообщение оставляем")
-        logger.info(f"{'='*60}\n")
+        logger.info(f"✅ User {user_id} — админ, сообщение оставляем")
         return
     
     # Удаляем сообщение
-    logger.info(f"🚫 User {user_id} — НЕ АДМИНИСТРАТОР")
-    logger.info(f"🗑️ Удаляем сообщение {msg_id}")
-    logger.info(f"{'='*60}\n")
-    
+    logger.info(f"🚫 User {user_id} НЕ админ, удаляем сообщение {msg_id}")
     await delete_message(msg_id)
 
 # ================== КОМАНДЫ ==================
@@ -385,31 +232,11 @@ async def handle_help(event: MessageCreated):
     if text == '/help':
         await send_message(
             chat_id,
-            "📖 **Команды бота (ТЕСТОВАЯ ВЕРСИЯ):**\n\n"
+            "📖 **Команды бота:**\n\n"
             "/help — эта справка\n"
-            "/status — статус бота\n"
-            "/test — тест получения админов\n"
-            "/myid — ваш ID"
-        )
-
-@dp.message_created()
-async def handle_test(event: MessageCreated):
-    """Команда /test - принудительное обновление админов"""
-    _, chat_id, _, text = get_message_info(event)
-    if text == '/test':
-        # Удаляем кэш
-        if str(chat_id) in admin_cache:
-            del admin_cache[str(chat_id)]
-        
-        # Получаем заново с детальным логированием
-        admin_ids = await get_admin_ids(str(chat_id))
-        
-        await send_message(
-            chat_id,
-            f"🧪 **Тест завершён!**\n\n"
-            f"Найдено админов: {len(admin_ids)}\n"
-            f"Список ID: {admin_ids}\n\n"
-            f"📊 Проверьте логи на BotHost.ru для деталей"
+            "/status — статус бота и кэша\n"
+            "/refresh — обновить список админов\n"
+            "/myid — показать ваш ID"
         )
 
 @dp.message_created()
@@ -418,23 +245,46 @@ async def handle_status(event: MessageCreated):
     _, chat_id, _, text = get_message_info(event)
     if text == '/status':
         cached = get_cached_admins(str(chat_id))
-        status_text = "✅ **Статус бота (ТЕСТОВАЯ ВЕРСИЯ):**\n\n"
-        status_text += f"Бот работает\n"
-        status_text += f"Кэш: {'активен' if cached else 'пуст'}\n"
+        status_text = "✅ **Статус бота:**\n\n"
+        status_text += "🟢 Бот работает нормально\n"
+        status_text += f"📦 Кэш: {'активен' if cached else 'пуст'}\n"
         if cached:
-            status_text += f"Админов в кэше: {len(cached)}"
+            status_text += f"👥 Админов в кэше: {len(cached)}\n"
+            status_text += f"🔄 Обновление через: {CACHE_DURATION // 60} мин"
         await send_message(chat_id, status_text)
+
+@dp.message_created()
+async def handle_refresh(event: MessageCreated):
+    """Команда /refresh"""
+    _, chat_id, user_id, text = get_message_info(event)
+    if text == '/refresh':
+        admin_ids = await get_admin_ids(str(chat_id))
+        
+        if user_id in admin_ids:
+            # Удаляем кэш
+            if str(chat_id) in admin_cache:
+                del admin_cache[str(chat_id)]
+            
+            # Обновляем
+            new_admins = await get_admin_ids(str(chat_id))
+            await send_message(
+                chat_id,
+                f"🔄 **Список админов обновлён!**\n\n"
+                f"Найдено администраторов: {len(new_admins)}"
+            )
+        else:
+            await send_message(chat_id, "❌ Только администраторы могут использовать эту команду")
 
 @dp.message_created()
 async def handle_myid(event: MessageCreated):
     """Команда /myid"""
     _, chat_id, user_id, text = get_message_info(event)
     if text == '/myid':
-        await send_message(chat_id, f"🆔 Ваш ID: `{user_id}`\nТип: {type(user_id).__name__}")
+        await send_message(chat_id, f"🆔 Ваш ID: `{user_id}`")
 
 # ================== ЗАПУСК ==================
 async def main():
-    logger.info("🚀 Запуск MAX бота-менеджера (ТЕСТОВАЯ ВЕРСИЯ)...")
+    logger.info("🚀 Запуск MAX бота-менеджера...")
     logger.info(f"📝 Токен: {'✅ Найден' if BOT_TOKEN else '❌ Отсутствует'}")
     await dp.start_polling(bot)
 
