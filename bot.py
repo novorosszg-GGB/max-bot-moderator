@@ -152,8 +152,7 @@ async def refresh_command(event: MessageCreated):
 
 async def main():
     logger.info("Запуск MAX бота-модератора...")
-    await dp.start_polling()
-
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
