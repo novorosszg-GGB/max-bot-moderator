@@ -13,11 +13,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Токен бота из переменных окружения BotHost
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+# Токен MAX-бота из редактируемых переменных BotHost
+BOT_TOKEN = os.environ.get("MY_MAX_BOT_TOKEN")
 
 if not BOT_TOKEN:
-    raise ValueError("Не найден BOT_TOKEN. Укажите токен бота в переменных окружения.")
-
+    raise ValueError("Не найден MY_MAX_BOT_TOKEN. Укажите реальный токен MAX-бота в дополнительных переменных окружения.")
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
