@@ -58,7 +58,7 @@ async def get_admins(chat_id: int) -> Set[int]:
         return set()
 
 
-async def delete_message_safe(message_id: int) -> bool:
+async def delete_message_safe(message_id: str) -> bool:
     """
     Безопасно удаляет сообщение.
     """
@@ -71,7 +71,6 @@ async def delete_message_safe(message_id: int) -> bool:
         logger.error("Ошибка при удалении сообщения %s: %s", message_id, error)
         return False
 
-
 @dp.message_created()
 async def handle_message_created(event: MessageCreated):
     """
@@ -81,16 +80,46 @@ async def handle_message_created(event: MessageCreated):
 
     try:
         message = event.message
+
         chat_id = message.recipient.chat_id
-      message_id = message.body.mid
         user_id = message.sender.user_id
+        message_id = message.body.mid
+        text = message.body.text or ""
 
         logger.info(
-            "Новое сообщение: chat_id=%s, message_id=%s, user_id=%s",
+            "Новое сообщение: chat_id=%s, message_id=%s, user_id=%s, text=%s",
             chat_id,
             message_id,
             user_id,
+            text,
         )
+
+        # Команды обрабатываем до удаления сообщений
+        if text == "/status":
+            admins = await get_admins(chat_id)
+            await message.answer(
+                f"Бот работает.\n"
+                f"ID чата: {chat_id}\n"
+                f"Ваш ID: {user_id}\n"
+                f"Администраторов найдено: {len(admins)}"
+            )
+            return
+
+        if text == "/myid":
+            await message.answer(f"Ваш ID: {user_id}")
+            return
+
+        if text == "/refresh":
+            if chat_id in admin_cache:
+                del admin_cache[chat_id]
+
+            admins = await get_admins(chat_id)
+
+            await message.answer(
+                f"Список администраторов обновлен.\n"
+                f"Администраторов найдено: {len(admins)}"
+            )
+            return
 
         admins = await get_admins(chat_id)
 
@@ -102,7 +131,6 @@ async def handle_message_created(event: MessageCreated):
 
     except Exception as error:
         logger.error("Ошибка в обработчике сообщения: %s", error)
-
 
 @dp.message_created(commands=["help"])
 async def help_command(event: MessageCreated):
