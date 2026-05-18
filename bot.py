@@ -82,7 +82,7 @@ async def handle_message_created(event: MessageCreated):
     try:
         message = event.message
         chat_id = message.recipient.chat_id
-        message_id = message.message_id
+      message_id = message.body.mid
         user_id = message.sender.user_id
 
         logger.info(
